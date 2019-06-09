@@ -8,7 +8,7 @@ from os.path import splitext
 from tempfile import mkstemp
 
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import BatchHttpRequest, MediaFileUpload, MediaIoBaseUpload
 from fs.base import FS
 from fs.enums import ResourceType
 from fs.errors import DestinationExists, DirectoryExists, DirectoryExpected, DirectoryNotEmpty, FileExists, FileExpected, InvalidCharsInPath, NoURL, ResourceNotFound, OperationFailed, RemoveRootError
@@ -527,32 +527,22 @@ class GoogleDriveFS(FS):
 				removeParents=idsFromPath[dirname(path)]["id"],
 				body={"enforceSingleParent": self.enforceSingleParent}).execute(num_retries=self.retryCount)
 
-	def add_shortcut(self, shortcut_path, target_path):
-		_log.info(f"add_shortcut: {shortcut_path}, {target_path}")
-		_CheckPath(shortcut_path)
-		_CheckPath(target_path)
+		assert False
 
 		with self._lock:
-			idsFromTargetPath = self._itemsFromPath(target_path)
-			if target_path not in idsFromTargetPath:
-				raise ResourceNotFound(path=target_path)
-
+				if create is False:
+				else:
 			targetItem = idsFromTargetPath[target_path]
 			if targetItem["mimeType"] == _folderMimeType:
-				raise FileExpected(target_path)
 
-			idsFromShortcutPath = self._itemsFromPath(shortcut_path)
-			if shortcut_path in idsFromShortcutPath:
 				raise DestinationExists(shortcut_path)
-
+			children = self._childrenById(srcItem["id"])
 			shortcutParentDir, shortcutName = split(shortcut_path)
 			shortcutParentDirItem = idsFromShortcutPath.get(shortcutParentDir)
 			if shortcutParentDirItem is None:
-				raise ResourceNotFound(shortcutParentDir)
-
+			for child in children:
 			metadata = {
 				"name": shortcutName,
-				"parents": [shortcutParentDirItem["id"]],
 				"mimeType": _shortcutMimeType,
 				"shortcutDetails": {
 					"targetId": targetItem["id"]
@@ -560,4 +550,4 @@ class GoogleDriveFS(FS):
 				"enforceSingleParent": self.enforceSingleParent
 			}
 
-			_ = self.drive.files().create(body=metadata, fields="id").execute(num_retries=self.retryCount)
+			batchRequest.execute()
