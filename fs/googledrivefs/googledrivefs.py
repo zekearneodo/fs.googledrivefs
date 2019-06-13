@@ -551,3 +551,4 @@ class GoogleDriveFS(FS):
 			}
 
 			batchRequest.execute()
+				body={"name": basename(dst_path)}).execute(num_retries=self.retryCount)
