@@ -552,3 +552,44 @@ class GoogleDriveFS(FS):
 
 			batchRequest.execute()
 				body={"name": basename(dst_path)}).execute(num_retries=self.retryCount)
+
+	def add_parent(self, path, parent_dir):
+		info(f"add_parent: {path} -> {parent_dir}")
+		_CheckPath(path)
+		_CheckPath(parent_dir)
+		with self._lock:
+			targetPath = join(parent_dir, basename(path))
+			IdFromPath = self._itemsFromPath(targetPath)
+
+			# don't allow violation of our requirement to keep filename unique inside new directory
+			if IdFromPath(targetPath) is not None:
+				raise FileExists(targetPath)
+
+			parentDirItem = IdFromPath(parent_dir)
+			if parentDirItem is None:
+				raise ResourceNotFound(parent_dir)
+
+			if parentDirItem["mimeType"] != _folderMimeType:
+				raise DirectoryExpected(parent_dir)
+
+			sourceItem = self._itemFromPath(path)
+			if sourceItem is None:
+				raise ResourceNotFound(path)
+
+			self.drive.files().update(
+				fileId=sourceItem["id"],
+				addParents=parentDirItem["id"],
+				body={}).execute(num_retries=self.retryCount)
+
+	def remove_parent(self, path):
+		info(f"remove_parent: {path}")
+		_CheckPath(path)
+		with self._lock:
+			IdFromPath = self._itemsFromPath(path)
+			sourceItem = IdFromPath(path)
+			if sourceItem is None:
+				raise ResourceNotFound(path)
+			self.drive.files().update(
+				fileId=sourceItem["id"],
+				removeParents=IdFromPath(dirname(path))["id"],
+				body={}).execute(num_retries=self.retryCount)
