@@ -37,6 +37,23 @@ def _CheckPath(path):
 		if char in path:
 			raise InvalidCharsInPath(path)
 
+def _IdFromPath(path, pathIdMap):
+	# if path[0] == "/":
+	# 	path2 = path[1:]
+	# result = pathIdMap.get(path, pathIdMap.get(path2, None))
+	result = pathIdMap.get(abspath(path), None)
+	if result is None:
+		_log.info(f"Looking up {path}")
+		_log.info(f"Not found in {pformat(list(pathIdMap.keys()))}")
+	return result
+
+class _CallbackSync:
+	def __call__(self, request_id, response, exception):
+		if exception is not None:
+			error(exception)
+			return
+		info(f"req: {request_id}, response: {response}")
+
 # TODO - switch to MediaIoBaseUpload and use BytesIO
 class _UploadOnClose(RawWrapper):
 	def __init__(self, fs, path, thisMetadata, parentMetadata, parsedMode, **options): # pylint: disable=too-many-arguments
@@ -118,6 +135,11 @@ class _UploadOnClose(RawWrapper):
 class SubGoogleDriveFS(SubFS):
 	def __repr__(self):
 		return "<SubGoogleDriveFS>"
+
+	def copydir(self, src_path, dst_path, create=False):
+		_, delegateSrcPath = self.delegate_path(src_path)
+		fs, delegateDstPath = self.delegate_path(dst_path)
+		fs.copydir(delegateSrcPath, delegateDstPath, create)
 
 	def add_parent(self, path, parent_dir):
 		fs, delegatePath = self.delegate_path(path)
@@ -527,31 +549,27 @@ class GoogleDriveFS(FS):
 				removeParents=idsFromPath[dirname(path)]["id"],
 				body={"enforceSingleParent": self.enforceSingleParent}).execute(num_retries=self.retryCount)
 
-		assert False
-
+	def copydir(self, src_path, dst_path, create=False):
+		info(f"copydir: {src_path} -> {dst_path}, {create}")
+		_CheckPath(src_path)
+		_CheckPath(dst_path)
 		with self._lock:
+			dstPathItem = self._itemFromPath(dst_path)
+			if dstPathItem is None:
 				if create is False:
+					raise ResourceNotFound(dst_path)
 				else:
-			targetItem = idsFromTargetPath[target_path]
-			if targetItem["mimeType"] == _folderMimeType:
-
-				raise DestinationExists(shortcut_path)
+					self.makedirs(dst_path)
+					dstPathItem = self._itemFromPath(dst_path)
+			srcItem = self._itemFromPath(src_path)
 			children = self._childrenById(srcItem["id"])
-			shortcutParentDir, shortcutName = split(shortcut_path)
-			shortcutParentDirItem = idsFromShortcutPath.get(shortcutParentDir)
-			if shortcutParentDirItem is None:
+			callbacks = _CallbackSync()
+			batchRequest = self.drive.new_batch_http_request(callback=callbacks)
 			for child in children:
-			metadata = {
-				"name": shortcutName,
-				"mimeType": _shortcutMimeType,
-				"shortcutDetails": {
-					"targetId": targetItem["id"]
-				},
-				"enforceSingleParent": self.enforceSingleParent
-			}
-
+				newMetadata = {"parents": [dstPathItem["id"]]}
+				batchRequest.add(self.drive().copy(fileId=child["id"], body=newMetadata))
 			batchRequest.execute()
-				body={"name": basename(dst_path)}).execute(num_retries=self.retryCount)
+			
 
 	def add_parent(self, path, parent_dir):
 		info(f"add_parent: {path} -> {parent_dir}")
@@ -593,25 +611,3 @@ class GoogleDriveFS(FS):
 				fileId=sourceItem["id"],
 				removeParents=IdFromPath(dirname(path))["id"],
 				body={}).execute(num_retries=self.retryCount)
-				body={"name": basename(dst_path)}).execute()
-
-	def copydir(self, src_path, dst_path, create=False):
-		assert False
-		info(f"copydir: {src_path} -> {dst_path}, {create}")
-		_CheckPath(src_path)
-		_CheckPath(dst_path)
-		with self._lock:
-			dstPathItem = self._itemFromPath(dst_path)
-			if dstPathItem is None:
-				if create is False:
-					raise ResourceNotFound(dst_path)
-				else:
-					self.makedirs(dst_path)
-					dstPathItem = self._itemFromPath(dst_path)
-			srcItem = self._itemFromPath(src_path)
-			children = self._childrenById(srcItem["id"])
-			batchRequest = BatchHttpRequest()
-			for child in children:
-				newMetadata = {"parents": [dstPathItem["id"]]}
-				batchRequest.add(self.drive().copy(fileId=child["id"], body=newMetadata))
-			batchRequest.execute()
